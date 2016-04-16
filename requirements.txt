@@ -1,0 +1,7 @@
+xlwt
+tornado
+psycopg2
+openpyxl
+requests
+pillow
+mandrill

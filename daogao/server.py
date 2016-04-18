@@ -135,9 +135,8 @@ def process_xls(data):
     """
 
     book.save('./{}.xlsx'.format(doc_id))
-
+    
     if 'triggers' in data:
-
         for trigger in data['triggers']:
             trigger_type = trigger['type']
             if trigger_type == 'sendEmail':
@@ -168,11 +167,15 @@ urls = [
     (r'^/generate-xls', GenerationHandler),
 ]
 
-if __name__ == '__main__':
-    app = tornado.web.Application(urls)
-    loop = IOLoop()
+def main_loop():
     try:
+        app = tornado.web.Application(urls)
+        loop = IOLoop()
         app.listen(8081)
         loop.start()
     except KeyboardInterrupt:
         print("bye")
+    
+
+if __name__ == '__main__':
+    main_loop()

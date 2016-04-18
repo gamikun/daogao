@@ -1,0 +1,6 @@
+env/*
+build/*
+dist/*
+*.pyc
+daogao.egg-info/*
+*.xlsx

@@ -11,11 +11,13 @@ from openpyxl.styles import Alignment, PatternFill
 from openpyxl.cell import Cell
 from email.mime.text import MIMEText
 from email.utils import formataddr
+import ConfigParser as configparser
 import smtplib
 import requests
 import sys
 import mandrill
 import os
+import argparse
 from binascii import hexlify
 from threading import Thread
 try:
@@ -153,14 +155,27 @@ def process_xls(data):
 class GenerationHandler(RequestHandler):
 
     def post(self):
-        args = json.loads(self.request.body)
-        thr = Thread(target=process_xls, args=(args, ))
-        hilos.append(thr)
-        thr.start()
+        config = self.settings['config']
+        api_method = config.get('api', 'method')
+        headers = self.request.headers
 
-        print("hay {} hilos".format(len(hilos)))
+        if api_method == 'singlekey':
+            expected_api_key = config.get('api', 'api_key')
+            api_key = headers.get('Authorization', None)
 
-        self.write('OK')
+            if api_key == expected_api_key:
+                args = json.loads(self.request.body)
+                thr = Thread(target=process_xls, args=(args, ))
+                hilos.append(thr)
+                thr.start()
+
+                print("hay {} hilos".format(len(hilos)))
+
+                self.write('OK')
+
+            else:
+                self.set_status(403)
+                self.write('ERROR')
 
 
 urls = [
@@ -168,8 +183,16 @@ urls = [
 ]
 
 def main_loop():
+    config_file = None
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-c', action='store', type=str,
+                        dest='config_file', required=True)
+    args = parser.parse_args()
+    cparser = configparser.RawConfigParser()
+    cparser.readfp(open(args.config_file, 'r'))
+
     try:
-        app = tornado.web.Application(urls)
+        app = tornado.web.Application(urls, config=cparser)
         loop = IOLoop()
         app.listen(8081)
         loop.start()

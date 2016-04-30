@@ -3,8 +3,6 @@ from __future__ import print_function
 from tornado.web import RequestHandler
 from tornado.ioloop import IOLoop
 import tornado.web
-from psycopg2 import connect as pg_connect
-from psycopg2.extras import DictCursor
 from openpyxl.workbook import Workbook
 from openpyxl.drawing.image import Image
 from openpyxl.styles import Alignment, PatternFill
@@ -12,10 +10,8 @@ from openpyxl.cell import Cell
 from email.mime.text import MIMEText
 from email.utils import formataddr
 import ConfigParser as configparser
-import smtplib
 import requests
 import sys
-import mandrill
 import os
 import argparse
 from binascii import hexlify
@@ -47,9 +43,9 @@ def send_email(to=None, subject=None, content=""):
         )
 
 def process_xls(data):
-    origin = data['dataOrigin']
     header = data['header']
     title = header['title']
+    origin = data['dataOrigin']
     book = Workbook()
     sheet = book.active
     doc_id = unique_id()
@@ -130,25 +126,38 @@ def process_xls(data):
 
             index += 1
 
-    """
-        files = {'file': open('./archivo.xlsx', 'r')}
-        response = requests.post(url_callback, files=files)
-        print(response.content)
-    """
-
     book.save('./{}.xlsx'.format(doc_id))
+
+    return doc_id
+
+def process_report(data):
     
+    
+    output = data['output']
+    outtype = output['type']
+
+    doc_id = None
+    
+    if outtype == 'xls':
+        doc_id = process_xls(data)
+    
+    else:
+        raise NotImplementedError()
+
     if 'triggers' in data:
         for trigger in data['triggers']:
             trigger_type = trigger['type']
             if trigger_type == 'sendEmail':
                 filename = '{}.xlsx'.format(doc_id)
                 filepath = '{}/{}'.format(downloads_url, filename)
-                content = 'Este es tu archivo: {}'\
-                        .format(filepath)
-
+                
+                body_template = trigger.get(
+                    'bodyTemplate', 'Este es tu archivo: {DownloadURL}'
+                    )
+                content = body_template.format(DownloadURL=filepath)
+                subject = trigger.get('subject', 'Tu excel está listo')
                 send_email(to=trigger['emails'],
-                           subject='Tu excel está listo',
+                           subject=subject,
                            content=content,
                            )
 
@@ -165,7 +174,7 @@ class GenerationHandler(RequestHandler):
 
             if api_key == expected_api_key:
                 args = json.loads(self.request.body)
-                thr = Thread(target=process_xls, args=(args, ))
+                thr = Thread(target=process_report, args=(args, ))
                 hilos.append(thr)
                 thr.start()
 

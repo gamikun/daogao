@@ -7,6 +7,7 @@ from openpyxl.workbook import Workbook
 from openpyxl.drawing.image import Image
 from openpyxl.styles import Alignment, PatternFill
 from openpyxl.cell import Cell
+from openpyxl.styles import Color
 from email.mime.text import MIMEText
 from email.utils import formataddr
 import ConfigParser as configparser
@@ -42,13 +43,14 @@ def send_email(to=None, subject=None, content=""):
             }
         )
 
-def process_xls(data):
+def process_xls(data, config=None):
     header = data['header']
     title = header['title']
     origin = data['dataOrigin']
     book = Workbook()
     sheet = book.active
     doc_id = unique_id()
+    files_path = config.get('files', 'path')
 
     if 'logoURL' in header:
         try:
@@ -57,7 +59,7 @@ def process_xls(data):
             logo = Image(logo.image.resize((100, 100)))
         except requests.ConnectionError as cerror:
             print(cerror, file=sys.stderr)
-            pass
+
     else:
         logo = None
 
@@ -66,6 +68,22 @@ def process_xls(data):
     header_bkg = PatternFill(fill_type="solid",
                              start_color=hdr_bkg_color,
                              end_color=hdr_bkg_color)
+    colformats = []
+    coltypes = []
+    has_formats = False
+
+    columns = data.get('columns', [])
+
+    try:
+        for col in columns:
+            colfmt = col.get('format', None)
+            coltype = col.get('type', None)
+            colformats.append(colfmt)
+            coltypes.append(coltype)
+        has_formats = True
+
+    except TypeError:
+        pass
 
     if origin == 'array':
         rows = data['rows']
@@ -80,7 +98,11 @@ def process_xls(data):
         sheet.merge_cells('D1:G1')
 
         for row in rows:
-            sheet.append(row)
+            cells = []
+            for value in row:
+                cell = Cell(sheet, value=value)
+                cells.append(cell)
+            sheet.append(cells)
 
     else:
         db = data['database']
@@ -89,6 +111,7 @@ def process_xls(data):
         title = data['title']
         columns = data['columns']
 
+        """
         conn = pg_connect(host=db['host'],
                           database=db['name'],
                           password=db['password'],
@@ -96,10 +119,12 @@ def process_xls(data):
 
         cursor = conn.cursor()
         cursor.execute(sql_query)
+        """
 
         index = 0
 
         is_first = True
+
         for row in cursor:
             if is_first:
                 sheet.merge_cells('A1:C1')
@@ -114,6 +139,10 @@ def process_xls(data):
                 for col in columns:
                     cell = Cell(sheet, value=col['label'])
                     cell.fill = header_bkg
+                    coltype = col.get('type', None)
+                    colfmt = col.get('format', None)
+                    columns_format.append(colfmt)
+                    columns_type.append(coltype)
                     headcells.append(cell)
 
                 sheet.append(headcells)
@@ -126,20 +155,20 @@ def process_xls(data):
 
             index += 1
 
-    book.save('./{}.xlsx'.format(doc_id))
+    outfile = '{}/{}.xlsx'.format(files_path, doc_id)
+    book.save(outfile)
 
     return doc_id
 
-def process_report(data):
-    
-    
+def process_report(data, config):
+
     output = data['output']
     outtype = output['type']
 
     doc_id = None
     
     if outtype == 'xls':
-        doc_id = process_xls(data)
+        doc_id = process_xls(data, config=config)
     
     else:
         raise NotImplementedError()
@@ -163,6 +192,13 @@ def process_report(data):
 
 class GenerationHandler(RequestHandler):
 
+    def response_json(self, success=False, http=200, params={}):
+        response = {'success': success}
+        response.update(params)
+        rawbody = json.dumps(response)
+        self.set_status(http)
+        self.write(rawbody)
+
     def post(self):
         config = self.settings['config']
         api_method = config.get('api', 'method')
@@ -174,17 +210,14 @@ class GenerationHandler(RequestHandler):
 
             if api_key == expected_api_key:
                 args = json.loads(self.request.body)
-                thr = Thread(target=process_report, args=(args, ))
+                thr = Thread(target=process_report,
+                             args=(args, config))
                 hilos.append(thr)
                 thr.start()
 
-                print("hay {} hilos".format(len(hilos)))
-
-                self.write('OK')
-
+                self.response_json(True)
             else:
-                self.set_status(403)
-                self.write('ERROR')
+                self.response_json(False, http=403)
 
 
 urls = [
@@ -203,10 +236,11 @@ def main_loop():
     try:
         app = tornado.web.Application(urls, config=cparser)
         loop = IOLoop()
+        print("starting daogao at port 8081")
         app.listen(8081)
         loop.start()
     except KeyboardInterrupt:
-        print("bye")
+        print("stoping daogao server")
     
 
 if __name__ == '__main__':

@@ -10,13 +10,13 @@ from openpyxl.cell import Cell
 from openpyxl.styles import Color
 from email.mime.text import MIMEText
 from email.utils import formataddr
-import ConfigParser as configparser
 import requests
 import sys
 import os
 import argparse
 from binascii import hexlify
 from threading import Thread
+import configparser as configparser
 try:
     import simplejson as json
 except ImportError:
@@ -231,7 +231,7 @@ def main_loop():
                         dest='config_file', required=True)
     args = parser.parse_args()
     cparser = configparser.RawConfigParser()
-    cparser.readfp(open(args.config_file, 'r'))
+    cparser.read_file(open(args.config_file, 'r'))
 
     try:
         app = tornado.web.Application(urls, config=cparser)
